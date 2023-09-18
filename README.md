@@ -131,6 +131,13 @@ To avoid filling Redis storage with stale subscription data:
 
     Heroku users should set up `use_redis_object_on_cleanup` setting to `false` due to [limitations in Heroku Redis](https://devcenter.heroku.com/articles/heroku-redis#connection-permissions).
 
+### Limitations
+
+The `GraphQL::AnyCable::Cleaner` uses [IDLETIME](https://redis.io/commands/object-idletime/) for detecting how long the object was inactive.
+It is a good way to detect inactive subscriptions, but `IDLETIME` is updated every time, not only when new subscriptions are, but when we read it
+It means that `broadcasting` also updates the `IDLETIME`, which does not give us the ability to detect useless subscriptions for cleaning
+It will be resolved in the next versions
+
 ## Configuration
 
 GraphQL-AnyCable uses [anyway_config] to configure itself. There are several possibilities to configure this gem:
@@ -165,6 +172,21 @@ GraphQL-AnyCable uses [anyway_config] to configure itself. There are several pos
     ```
 
 And any other way provided by [anyway_config]. Check its documentation!
+
+## Emergency Actions
+
+In situations, when you don't set `subscription_expiration_seconds`, have a lot of inactive subscriptions and `GraphQL::AnyCable::Cleaner` doesn`t help in that, you can do the
+next actions for clearing subscriptions
+
+1. Set `config.subscription_expiration_seconds`. After that, the new subscriptions will have `TTL`
+2. Through the `redis_prefix` (look at the `Configuration` block) change the redis prefixes, which uses for storing keys
+3. Run the script, using the old `redis_prefix` (the default value is `graphql`)
+```ruby
+  redis = GraphQL::AnyCable.redis
+  redis.scan_each("graphql-subscription:*") do |key|
+    redis.del(key) if redis.ttl(key) < 0 # Remove it, because it is an old record
+  end
+```
 
 ## Data model
 
