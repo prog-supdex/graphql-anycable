@@ -28,11 +28,13 @@ module GraphQL
         return unless config.subscription_expiration_seconds
         return unless config.use_redis_object_on_cleanup
 
-        redis.scan_each(match: "#{adapter::SUBSCRIPTION_PREFIX}*") do |key|
-          idle = redis.object("IDLETIME", key)
-          next if idle&.<= config.subscription_expiration_seconds
+        redis.scan_each(match: "#{redis_key(adapter::SUBSCRIPTION_PREFIX)}*") do |key|
+          next unless object_created_time_expired?(key)
 
-          redis.del(key)
+          redis.multi do |pipeline|
+            pipeline.del(key)
+            pipeline.hdel(redis_key(adapter::CREATED_AT_KEY), key)
+          end
         end
       end
 
@@ -69,6 +71,20 @@ module GraphQL
 
       def config
         GraphQL::AnyCable.config
+      end
+
+      def redis_key(prefix)
+        "#{config.redis_prefix}-#{prefix}"
+      end
+
+      def object_created_time_expired?(key)
+        last_created_time = redis.hget(redis_key(adapter::CREATED_AT_KEY), key)
+
+        return false unless last_created_time
+
+        expire_date = Time.parse(last_created_time) + config.subscription_expiration_seconds
+
+        Time.now >= expire_date
       end
     end
   end

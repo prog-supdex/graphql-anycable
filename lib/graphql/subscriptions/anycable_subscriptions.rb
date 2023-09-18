@@ -3,7 +3,6 @@
 require "anycable"
 require "graphql/subscriptions"
 require "graphql/anycable/errors"
-
 # rubocop: disable Metrics/AbcSize, Metrics/LineLength, Metrics/MethodLength
 
 # A subscriptions implementation that sends data as AnyCable broadcastings.
@@ -56,10 +55,11 @@ module GraphQL
 
       def_delegators :"GraphQL::AnyCable", :redis, :config
 
-      SUBSCRIPTION_PREFIX  = "subscription:"  # HASH: Stores subscription data: query, context, …
-      FINGERPRINTS_PREFIX  = "fingerprints:"  # ZSET: To get fingerprints by topic
-      SUBSCRIPTIONS_PREFIX = "subscriptions:" # SET:  To get subscriptions by fingerprint
-      CHANNEL_PREFIX       = "channel:"       # SET:  Auxiliary structure for whole channel's subscriptions cleanup
+      SUBSCRIPTION_PREFIX  = "subscription:"                # HASH: Stores subscription data: query, context, …
+      FINGERPRINTS_PREFIX  = "fingerprints:"                # ZSET: To get fingerprints by topic
+      SUBSCRIPTIONS_PREFIX = "subscriptions:"               # SET:  To get subscriptions by fingerprint
+      CHANNEL_PREFIX       = "channel:"                     # SET:  Auxiliary structure for whole channel's subscriptions cleanup
+      CREATED_AT_KEY       = "objects:list-created-times"   # HASH: Stores name and created_time of object
 
       # @param serializer [<#dump(obj), #load(string)] Used for serializing messages before handing them to `.broadcast(msg)`
       def initialize(serializer: Serialize, **rest)
@@ -131,7 +131,6 @@ module GraphQL
         # Store subscription_id in the channel state to cleanup on disconnect
         write_subscription_id(channel, channel_uniq_id)
 
-
         events.each do |event|
           channel.stream_from(redis_key(SUBSCRIPTIONS_PREFIX) + event.fingerprint)
         end
@@ -145,8 +144,13 @@ module GraphQL
         }
 
         redis.multi do |pipeline|
+          full_subscription_id = "#{redis_key(SUBSCRIPTION_PREFIX)}#{subscription_id}"
+
           pipeline.sadd(redis_key(CHANNEL_PREFIX) + channel_uniq_id, [subscription_id])
-          pipeline.mapped_hmset(redis_key(SUBSCRIPTION_PREFIX) + subscription_id, data)
+          pipeline.mapped_hmset(full_subscription_id, data)
+
+          pipeline.hset(redis_key(CREATED_AT_KEY), full_subscription_id, Time.now.to_s)
+
           events.each do |event|
             pipeline.zincrby(redis_key(FINGERPRINTS_PREFIX) + event.topic, 1, event.fingerprint)
             pipeline.sadd(redis_key(SUBSCRIPTIONS_PREFIX) + event.fingerprint, [subscription_id])
@@ -182,7 +186,10 @@ module GraphQL
             fingerprint_subscriptions[redis_key(FINGERPRINTS_PREFIX) + topic] = score
           end
           # Delete subscription itself
-          pipeline.del(redis_key(SUBSCRIPTION_PREFIX) + subscription_id)
+          full_subscription_id = "#{redis_key(SUBSCRIPTION_PREFIX)}#{subscription_id}"
+
+          pipeline.del(full_subscription_id)
+          pipeline.hdel(redis_key(CREATED_AT_KEY), full_subscription_id)
         end
         # Clean up fingerprints that doesn't have any subscriptions left
         redis.pipelined do |pipeline|

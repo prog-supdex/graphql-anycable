@@ -138,10 +138,12 @@ RSpec.describe GraphQL::AnyCable do
         expect(redis.exists?("graphql-subscription:some-truly-random-number")).to be true
         expect(redis.exists?("graphql-channel:some-truly-random-number")).to be true
         expect(redis.exists?("graphql-fingerprints::productUpdated:")).to be true
+        expect(redis.hexists("graphql-objects:list-created-times", "graphql-subscription:some-truly-random-number")).to be true
         subject
         expect(redis.exists?("graphql-channel:some-truly-random-number")).to be false
         expect(redis.exists?("graphql-fingerprints::productUpdated:")).to be false
         expect(redis.exists?("graphql-subscription:some-truly-random-number")).to be false
+        expect(redis.hexists("graphql-objects:list-created-times", "graphql-subscription:some-truly-random-number")).to be false
       end
     end
 
