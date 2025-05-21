@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
 RSpec.describe GraphQL::AnyCable do
+  let(:operation_name) { "SomeSubscription" }
+
   subject do
     AnycableSchema.execute(
       query: query,
       context: {channel: channel, subscription_id: subscription_id},
       variables: {},
-      operation_name: "SomeSubscription"
+      operation_name: operation_name
     ).tap do |result|
       expect(result.to_h.fetch("errors", [])).to be_empty
     end
@@ -55,25 +57,16 @@ RSpec.describe GraphQL::AnyCable do
     expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
   end
 
-  context "with multiple subscriptions in one query" do
-    let(:query) do
-      <<~GRAPHQL
-        subscription SomeSubscription {
-          productCreated { id title }
-          productUpdated { id }
-        }
-      GRAPHQL
-    end
-
-    context "triggering update event" do
-      it "broadcasts message only for update event" do
-        subject
-        AnycableSchema.subscriptions.trigger(:product_updated, {}, {id: 1, title: "foo"})
-        expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
+  context "with multiple subscriptions in two queries" do
+    context "product created subscription" do
+      let(:operation_name) { "ProductCreatedSubscription" }
+      let(:query) do
+        <<~GRAPHQL
+          subscription ProductCreatedSubscription {
+            productCreated { id title }
+          }
+        GRAPHQL
       end
-    end
-
-    context "triggering create event" do
       let(:expected_result) do
         <<~JSON.strip
           {"result":{"data":{"productCreated":{"id":"1","title":"Gravizapa"}}},"more":true}
@@ -83,21 +76,36 @@ RSpec.describe GraphQL::AnyCable do
       it "broadcasts message only for create event" do
         subject
         AnycableSchema.subscriptions.trigger(:product_created, {}, {id: 1, title: "Gravizapa"})
+        expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
+      end
+    end
 
+    context "product updated subscription" do
+      let(:operation_name) { "ProductUpdatedSubscription" }
+      let(:query) do
+        <<~GRAPHQL
+          subscription ProductUpdatedSubscription {
+            productUpdated { id }
+          }
+        GRAPHQL
+      end
+
+      let(:expected_result) do
+        <<~JSON.strip
+          {"result":{"data":{"productUpdated":{"id":"1"}}},"more":true}
+        JSON
+      end
+
+      it "broadcasts message for update event" do
+        subject
+        AnycableSchema.subscriptions.trigger(:product_updated, {}, {id: 1, title: "foo"})
         expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
       end
     end
   end
 
   context "with empty operation name" do
-    subject do
-      AnycableSchema.execute(
-        query: query,
-        context: {channel: channel, subscription_id: subscription_id},
-        variables: {},
-        operation_name: nil
-      )
-    end
+    let(:operation_name) { nil }
 
     let(:query) do
       <<~GRAPHQL
@@ -118,7 +126,7 @@ RSpec.describe GraphQL::AnyCable do
           query: query,
           context: {channel: channel, subscription_id: subscription_id},
           variables: {},
-          operation_name: "SomeSubscription"
+          operation_name: operation_name
         )
       end
 
@@ -154,7 +162,7 @@ RSpec.describe GraphQL::AnyCable do
           query: query,
           context: {channel: channel, subscription_id: subscription_id},
           variables: {},
-          operation_name: "SomeSubscription"
+          operation_name: operation_name
         )
       end
 
@@ -182,7 +190,7 @@ RSpec.describe GraphQL::AnyCable do
         query: query,
         context: {}, # Intentionally left blank
         variables: {},
-        operation_name: "SomeSubscription"
+        operation_name: operation_name
       )
     end
 
@@ -194,9 +202,9 @@ RSpec.describe GraphQL::AnyCable do
 
     it "raises configuration error" do
       expect { subject }.to raise_error(
-        GraphQL::AnyCable::ChannelConfigurationError,
-        /ActionCable channel wasn't provided in the context for GraphQL query execution!/
-      )
+                              GraphQL::AnyCable::ChannelConfigurationError,
+                              /ActionCable channel wasn't provided in the context for GraphQL query execution!/
+                            )
     end
   end
 

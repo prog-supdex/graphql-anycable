@@ -2,10 +2,17 @@
 
 RSpec.describe GraphQL::AnyCable::Stats do
   describe "#collect" do
-    let(:query) do
+    let(:created_query) do
       <<~GRAPHQL
-        subscription SomeSubscription {
+        subscription ProductCreatedSubscription {
           productCreated { id title }
+        }
+      GRAPHQL
+    end
+
+    let(:updated_query) do
+      <<~GRAPHQL
+        subscription ProductUpdatedSubscription {
           productUpdated { id }
         }
       GRAPHQL
@@ -23,16 +30,23 @@ RSpec.describe GraphQL::AnyCable::Stats do
 
     before do
       AnycableSchema.execute(
-        query: query,
-        context: {channel: channel, subscription_id: subscription_id},
+        query: created_query,
+        context: {channel: channel, subscription_id: "#{subscription_id}-created"},
         variables: {},
-        operation_name: "SomeSubscription"
+        operation_name: "ProductCreatedSubscription"
+      )
+
+      AnycableSchema.execute(
+        query: updated_query,
+        context: {channel: channel, subscription_id: "#{subscription_id}-updated"},
+        variables: {},
+        operation_name: "ProductUpdatedSubscription"
       )
     end
 
     context "when include_subscriptions is false" do
       let(:expected_result) do
-        {total: {subscription: 1, fingerprints: 2, subscriptions: 2, channel: 1}}
+        {total: {subscription: 2, fingerprints: 2, subscriptions: 2, channel: 2}}
       end
 
       it "returns total stat" do
@@ -45,7 +59,7 @@ RSpec.describe GraphQL::AnyCable::Stats do
 
       let(:expected_result) do
         {
-          total: {subscription: 1, fingerprints: 2, subscriptions: 2, channel: 1},
+          total: {subscription: 2, fingerprints: 2, subscriptions: 2, channel: 2},
           subscriptions: {
             "productCreated" => 1,
             "productUpdated" => 1
