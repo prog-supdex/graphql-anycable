@@ -79,4 +79,79 @@ RSpec.describe "Broadcasting" do
       expect(AnyCable).to have_received(:broadcast).once
     end
   end
+
+  context "when handling race conditions with subscription deleted between checks" do
+    let(:query) do
+      <<~GRAPHQL.strip
+        subscription SomeSubscription { postCreated{ id } }
+      GRAPHQL
+    end
+
+    let(:redis) { $redis }
+    let(:object) { double("Post", id: 1, title: "Racing") }
+    let(:fingerprint) { ":postCreated:/SomeSubscription/race-condition-test/0/signature456=" }
+    let(:subscriptions) { BroadcastSchema.subscriptions }
+
+    before do
+      allow_any_instance_of(GraphQL::Subscriptions::Event).to receive(:fingerprint).and_return(fingerprint)
+
+      3.times { subscribe(query) }
+
+      @subscription_ids = redis.smembers("graphql-subscriptions:#{fingerprint}")
+      expect(@subscription_ids.size).to eq(3)
+
+      # Emulate removing a subscription like race condition
+      allow(subscriptions).to receive(:read_subscription).and_wrap_original do |original, sid|
+        # Remove first subscription after `checking existing`, but before the read_subscription
+        if sid == @subscription_ids.first
+          redis.del("graphql-subscription:#{sid}")
+
+          nil
+        else
+          original.call(sid)
+        end
+      end
+
+      allow(AnyCable).to receive(:broadcast)
+    end
+
+    it "handles subscription deleted between exists? check and read_subscription" do
+      subscriptions.execute_grouped(
+        fingerprint,
+        @subscription_ids,
+        GraphQL::Subscriptions::Event.new(
+          name: "postCreated",
+          arguments: {},
+          field: BroadcastSchema.subscription.fields["postCreated"],
+          scope: nil,
+          context: {}
+        ),
+        object
+      )
+
+      # We must get broadcast here, because if the first subscription expired, we should process the rest of subscriptions
+      expect(AnyCable).to have_received(:broadcast).once
+      expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", anything)
+    end
+
+    it "returns without broadcasting when all subscriptions were deleted between checks" do
+      # read_subscription always returns nil
+      allow(subscriptions).to receive(:read_subscription).and_return(nil)
+
+      subscriptions.execute_grouped(
+        fingerprint,
+        @subscription_ids,
+        GraphQL::Subscriptions::Event.new(
+          name: "postCreated",
+          arguments: {},
+          field: BroadcastSchema.subscription.fields["postCreated"],
+          scope: nil,
+          context: {}
+        ),
+        object
+      )
+
+      expect(AnyCable).not_to have_received(:broadcast)
+    end
+  end
 end
