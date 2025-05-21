@@ -97,10 +97,24 @@ module GraphQL
       def execute_grouped(fingerprint, subscription_ids, event, object)
         return if subscription_ids.empty?
 
-        subscription_id = with_redis { |redis| subscription_ids.find { |sid| redis.exists?(redis_key(SUBSCRIPTION_PREFIX) + sid) } }
-        return unless subscription_id # All subscriptions has expired but haven't cleaned up yet
+        result = nil
 
-        result = execute_update(subscription_id, event, object)
+        # Iterate through all subscriptions to find the subscription which:
+        # 1. still exists in Redis
+        # 2. got a result when updated with the event
+        # This protects in cases where a subscription could expire between checking a subscription exists and
+        # update execution
+        # We need only one working subscription, because the result will be shared with all subscribers
+        with_redis do |redis|
+          subscription_ids.each do |sid|
+            next unless redis.exists?(redis_key(SUBSCRIPTION_PREFIX) + sid)
+
+            result = execute_update(sid, event, object)
+
+            break if result
+          end
+        end
+
         return unless result
 
         # Having calculated the result _once_, send the same payload to all subscribers
@@ -165,12 +179,17 @@ module GraphQL
           redis.mapped_hmget(
             "#{redis_key(SUBSCRIPTION_PREFIX)}#{subscription_id}",
             :query_string, :variables, :context, :operation_name
-          ).tap do |subscription|
-            next if subscription.values.all?(&:nil?) # Redis returns hash with all nils for missing key
+          ).then do |subscription|
+            # Redis returns hash with all nils for missing key
+            return nil if subscription.values.all?(&:nil?)
+            # query_string is a required field for executing a subscription, so we should be sure that it exists
+            return nil if subscription[:query_string].nil?
 
             subscription[:context] = @serializer.load(subscription[:context])
             subscription[:variables] = JSON.parse(subscription[:variables])
-            subscription[:operation_name] = nil if subscription[:operation_name].strip == ""
+            subscription[:operation_name] = nil if subscription[:operation_name].to_s.strip == ""
+
+            subscription
           end
         end
       end
