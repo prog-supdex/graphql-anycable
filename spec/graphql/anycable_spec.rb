@@ -202,9 +202,9 @@ RSpec.describe GraphQL::AnyCable do
 
     it "raises configuration error" do
       expect { subject }.to raise_error(
-                              GraphQL::AnyCable::ChannelConfigurationError,
-                              /ActionCable channel wasn't provided in the context for GraphQL query execution!/
-                            )
+        GraphQL::AnyCable::ChannelConfigurationError,
+        /ActionCable channel wasn't provided in the context for GraphQL query execution!/
+      )
     end
   end
 

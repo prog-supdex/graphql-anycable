@@ -102,7 +102,7 @@ module GraphQL
         # Iterate through all subscriptions to find the subscription which:
         # 1. still exists in Redis
         # 2. got a result when updated with the event
-        # This protects in cases where a subscription could expire between checking a subscription exists and
+        # This protects in cases where a subscription could expire between checking a subscription existing and
         # update execution
         # We need only one working subscription, because the result will be shared with all subscribers
         with_redis do |redis|
