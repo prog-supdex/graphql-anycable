@@ -4,8 +4,6 @@ require "anycable"
 require "graphql/subscriptions"
 require "graphql/anycable/errors"
 
-# rubocop: disable Metrics/AbcSize, Metrics/LineLength, Metrics/MethodLength
-
 # A subscriptions implementation that sends data as AnyCable broadcastings.
 #
 # Since AnyCable is aimed to be compatible with ActionCable, this adapter
@@ -249,4 +247,3 @@ module GraphQL
     end
   end
 end
-# rubocop: enable Metrics/AbcSize, Metrics/LineLength, Metrics/MethodLength

@@ -2,8 +2,7 @@ inherit_mode:
   merge:
     - Exclude
 
-require:
-  - standard
+plugins:
   - standard-custom
   - standard-performance
   - rubocop-performance

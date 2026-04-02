@@ -5,8 +5,15 @@ RSpec.describe GraphQL::AnyCable::Stats do
     let(:query) do
       <<~GRAPHQL
         subscription SomeSubscription {
-          productCreated { id title }
           productUpdated { id }
+        }
+      GRAPHQL
+    end
+
+    let(:query2) do
+      <<~GRAPHQL
+        subscription SomeSubscription {
+          productCreated { id title }
         }
       GRAPHQL
     end
@@ -22,12 +29,21 @@ RSpec.describe GraphQL::AnyCable::Stats do
     end
 
     before do
-      AnycableSchema.execute(
+      res = AnycableSchema.execute(
         query: query,
         context: {channel: channel, subscription_id: subscription_id},
         variables: {},
         operation_name: "SomeSubscription"
       )
+      expect(res.to_h.fetch("errors", [])).to be_empty
+
+      res2 = AnycableSchema.execute(
+        query: query2,
+        context: {channel: channel, subscription_id: subscription_id},
+        variables: {},
+        operation_name: "SomeSubscription"
+      )
+      expect(res2.to_h.fetch("errors", [])).to be_empty
     end
 
     context "when include_subscriptions is false" do

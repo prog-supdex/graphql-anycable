@@ -55,37 +55,42 @@ RSpec.describe GraphQL::AnyCable do
     expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
   end
 
-  context "with multiple subscriptions in one query" do
+  context "triggering update event" do
     let(:query) do
       <<~GRAPHQL
         subscription SomeSubscription {
-          productCreated { id title }
           productUpdated { id }
         }
       GRAPHQL
     end
 
-    context "triggering update event" do
-      it "broadcasts message only for update event" do
-        subject
-        AnycableSchema.subscriptions.trigger(:product_updated, {}, {id: 1, title: "foo"})
-        expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
-      end
+    it "broadcasts message only for update event" do
+      subject
+      AnycableSchema.subscriptions.trigger(:product_updated, {}, {id: 1, title: "foo"})
+      expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
+    end
+  end
+
+  context "triggering create event" do
+    let(:query) do
+      <<~GRAPHQL
+        subscription SomeSubscription {
+          productCreated { id title }
+        }
+      GRAPHQL
     end
 
-    context "triggering create event" do
-      let(:expected_result) do
-        <<~JSON.strip
-          {"result":{"data":{"productCreated":{"id":"1","title":"Gravizapa"}}},"more":true}
-        JSON
-      end
+    let(:expected_result) do
+      <<~JSON.strip
+        {"result":{"data":{"productCreated":{"id":"1","title":"Gravizapa"}}},"more":true}
+      JSON
+    end
 
-      it "broadcasts message only for create event" do
-        subject
-        AnycableSchema.subscriptions.trigger(:product_created, {}, {id: 1, title: "Gravizapa"})
+    it "broadcasts message only for create event" do
+      subject
+      AnycableSchema.subscriptions.trigger(:product_created, {}, {id: 1, title: "Gravizapa"})
 
-        expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
-      end
+      expect(AnyCable).to have_received(:broadcast).with("graphql-subscriptions:#{fingerprint}", expected_result)
     end
   end
 
