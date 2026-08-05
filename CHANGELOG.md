@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
-### Changed
+## 1.3.2 - 2026-08-05
+
+### Fixed
 
 - Cleanup tasks are much faster and use bounded memory: `SCAN`/`SSCAN`/`ZSCAN` are called with a configurable `COUNT` (new `redis_scan_count` setting, default `1000`) instead of Redis' default of 10, members are read incrementally with `SSCAN`/`ZSCAN` instead of `SMEMBERS`/`ZRANGE` (which materialized entire sets in the rake process), and the per-member `EXISTS`, `OBJECT IDLETIME`, `SREM`, `ZREM` and `DEL` calls are pipelined in batches instead of being issued one round trip at a time. [@jjb] ([#56](https://github.com/anycable/graphql-anycable/pull/56))
 
