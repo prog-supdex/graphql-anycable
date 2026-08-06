@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+### Fixed
+
+- Further optimize cleanup tasks with pipelining their reads and removals across keys. [@jjb] ([#57](https://github.com/anycable/graphql-anycable/pull/57))
+
 ## 1.3.2 - 2026-08-05
 
 ### Fixed
