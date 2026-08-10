@@ -127,8 +127,12 @@ module GraphQL
 
         raise GraphQL::AnyCable::ChannelConfigurationError unless channel
 
-        # Store subscription_id in the channel state to cleanup on disconnect
-        write_subscription_id(channel, subscription_id)
+        # Store the channel's id in its state to cleanup on disconnect. A channel may carry more
+        # than one subscription, so the first subscription's id names the channel and every later
+        # subscription is added to that same set: otherwise each new subscription would overwrite
+        # the stored id, and #delete_channel_subscriptions could only ever find the last one.
+        channel_id = read_channel_id(channel) || subscription_id
+        write_channel_id(channel, channel_id)
 
         events.each do |event|
           channel.stream_from(redis_key(SUBSCRIPTIONS_PREFIX) + event.fingerprint)
@@ -144,14 +148,14 @@ module GraphQL
 
         with_redis do |redis|
           redis.multi do |pipeline|
-            pipeline.sadd(redis_key(CHANNEL_PREFIX) + subscription_id, [subscription_id])
+            pipeline.sadd(redis_key(CHANNEL_PREFIX) + channel_id, [subscription_id])
             pipeline.mapped_hmset(redis_key(SUBSCRIPTION_PREFIX) + subscription_id, data)
             events.each do |event|
               pipeline.zincrby(redis_key(FINGERPRINTS_PREFIX) + event.topic, 1, event.fingerprint)
               pipeline.sadd(redis_key(SUBSCRIPTIONS_PREFIX) + event.fingerprint, [subscription_id])
             end
             next unless config.subscription_expiration_seconds
-            pipeline.expire(redis_key(CHANNEL_PREFIX) + subscription_id, config.subscription_expiration_seconds)
+            pipeline.expire(redis_key(CHANNEL_PREFIX) + channel_id, config.subscription_expiration_seconds)
             pipeline.expire(redis_key(SUBSCRIPTION_PREFIX) + subscription_id, config.subscription_expiration_seconds)
           end
         end
@@ -177,7 +181,7 @@ module GraphQL
       def delete_channel_subscriptions(channel)
         raise(ArgumentError, "Please pass channel instance to #{__method__} in your #unsubscribed method") if channel.is_a?(String)
 
-        channel_id = read_subscription_id(channel)
+        channel_id = read_channel_id(channel)
 
         # Missing in case disconnect happens before #execute
         return unless channel_id
@@ -213,7 +217,8 @@ module GraphQL
 
       private
 
-      def read_subscription_id(channel)
+      # Channel cleanup key kept in AnyCable istate as "sid"
+      def read_channel_id(channel)
         return channel.instance_variable_get(:@__sid__) if channel.instance_variable_defined?(:@__sid__)
 
         istate = fetch_channel_istate(channel)
@@ -223,7 +228,7 @@ module GraphQL
         channel.instance_variable_set(:@__sid__, istate["sid"])
       end
 
-      def write_subscription_id(channel, val)
+      def write_channel_id(channel, val)
         channel.connection.anycable_socket.istate["sid"] = val
         channel.instance_variable_set(:@__sid__, val)
       end
