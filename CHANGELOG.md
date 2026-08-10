@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## 1.3.3 - 2026-08-10
+
 ### Fixed
 
 - Subscriptions are no longer leaked when a channel carries more than one of them. The first subscription's id now names the channel and later subscriptions are added to that same set. On disconnect, the channel's set is read and all subscriptions in it are deleted instead of only the most recent one as before. [@jjb] ([#58](https://github.com/anycable/graphql-anycable/pull/58))
