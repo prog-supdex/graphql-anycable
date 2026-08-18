@@ -97,20 +97,14 @@ module GraphQL
 
         result = nil
 
-        # Iterate through all subscriptions to find the subscription which:
-        # 1. still exists in Redis
-        # 2. got a result when updated with the event
-        # This protects in cases where a subscription could expire between checking a subscription existing and
-        # update execution
-        # We need only one working subscription, because the result will be shared with all subscribers
-        with_redis do |redis|
-          subscription_ids.each do |sid|
-            next unless redis.exists?(redis_key(SUBSCRIPTION_PREFIX) + sid)
+        subscription_ids.each do |subscription_id|
+          next unless subscription_exists?(subscription_id)
 
-            result = execute_update(sid, event, object)
+          result = execute_update(subscription_id, event, object)
 
-            break if result
-          end
+          # A nil result can mean either a missing subscription or a skipped update.
+          # Retry only if the subscription disappeared.
+          break if result || subscription_exists?(subscription_id)
         end
 
         return unless result
@@ -182,10 +176,8 @@ module GraphQL
             "#{redis_key(SUBSCRIPTION_PREFIX)}#{subscription_id}",
             :query_string, :variables, :context, :operation_name
           ).then do |subscription|
-            # Redis returns hash with all nils for missing key
-            return nil if subscription.values.all?(&:nil?)
-            # query_string is a required field for executing a subscription, so we should be sure that it exists
-            return nil if subscription[:query_string].nil?
+            # Redis returns a hash with nil values for a missing key
+            next if subscription[:query_string].nil?
 
             subscription[:context] = @serializer.load(subscription[:context])
             subscription[:variables] = JSON.parse(subscription[:variables])
@@ -213,7 +205,9 @@ module GraphQL
         end
       end
 
-      def delete_subscription(subscription_id, redis: AnyCable.redis)
+      def delete_subscription(subscription_id, redis: nil)
+        return with_redis { |connection| delete_subscription(subscription_id, redis: connection) } unless redis
+
         events = redis.hget(redis_key(SUBSCRIPTION_PREFIX) + subscription_id, :events)
         events = events ? JSON.parse(events) : {}
         fingerprint_subscriptions = {}
@@ -267,6 +261,10 @@ module GraphQL
 
       def redis_key(prefix)
         "#{config.redis_prefix}-#{prefix}"
+      end
+
+      def subscription_exists?(subscription_id)
+        with_redis { |redis| redis.exists?(redis_key(SUBSCRIPTION_PREFIX) + subscription_id) }
       end
     end
   end
