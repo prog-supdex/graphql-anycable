@@ -89,9 +89,7 @@ RSpec.describe "Broadcasting" do
 
     let(:redis) { $redis }
     let(:object) { double("Post", id: 1) }
-    let(:fingerprint) { ":postCreated:/SomeSubscription/race-condition-test/0/signature456=" }
     let(:subscriptions) { BroadcastSchema.subscriptions }
-    let(:subscription_ids) { redis.smembers("graphql-subscriptions:#{fingerprint}") }
     let(:event) do
       GraphQL::Subscriptions::Event.new(
         name: "postCreated",
@@ -101,30 +99,23 @@ RSpec.describe "Broadcasting" do
         context: {}
       )
     end
+    # A hand-built event can't compute its own fingerprint (it has no query), so take the
+    # one the subscriptions were actually stored under. #execute_grouped is given it anyway.
+    let(:fingerprint) { redis.zrange("graphql-fingerprints:#{event.topic}", 0, -1).first }
+    let(:subscription_ids) { redis.smembers("graphql-subscriptions:#{fingerprint}") }
 
     subject(:execute_grouped) do
       subscriptions.execute_grouped(fingerprint, subscription_ids, event, object)
     end
 
     before do
-      allow_any_instance_of(GraphQL::Subscriptions::Event).to receive(:fingerprint).and_return(fingerprint)
-
       3.times { subscribe(query) }
       expect(subscription_ids.size).to eq(3)
     end
 
-    context "when the first subscription expires before being read" do
+    context "when a subscription expires before being read" do
       before do
         expired_subscription_id = subscription_ids.first
-        redis_checked_out = false
-
-        allow(GraphQL::AnyCable).to receive(:with_redis).and_wrap_original do |original, &block|
-          expect(redis_checked_out).to be(false)
-          redis_checked_out = true
-          original.call(&block)
-        ensure
-          redis_checked_out = false
-        end
 
         allow(subscriptions).to receive(:read_subscription).and_wrap_original do |original, subscription_id|
           redis.del("graphql-subscription:#{subscription_id}") if subscription_id == expired_subscription_id
@@ -142,6 +133,23 @@ RSpec.describe "Broadcasting" do
         expect(object).to have_received(:id).once
         expect(subscriptions).to have_received(:read_subscription).twice
       end
+
+      it "never holds a Redis connection while checking out another one" do
+        checked_out = false
+
+        allow(GraphQL::AnyCable).to receive(:with_redis).and_wrap_original do |original, &block|
+          raise "Redis connection checked out reentrantly, a small pool would deadlock here" if checked_out
+
+          checked_out = true
+          begin
+            original.call(&block)
+          ensure
+            checked_out = false
+          end
+        end
+
+        expect { execute_grouped }.not_to raise_error
+      end
     end
 
     context "when the update is skipped" do
@@ -153,6 +161,26 @@ RSpec.describe "Broadcasting" do
       it "does not execute another subscription" do
         execute_grouped
 
+        expect(AnyCable).not_to have_received(:broadcast)
+      end
+    end
+
+    context "when a subscriber unsubscribes instead of updating" do
+      let(:executed_updates) { [] }
+
+      before do
+        allow_any_instance_of(Broadcastable::PostCreated).to receive(:update) do |subscription|
+          executed_updates << subscription
+          subscription.unsubscribe
+        end
+      end
+
+      # #unsubscribe deletes the subscription and returns no result, which looks exactly
+      # like an expired one. Retrying there would re-run the query for the whole group.
+      it "does not execute another subscription" do
+        execute_grouped
+
+        expect(executed_updates.size).to eq(1)
         expect(AnyCable).not_to have_received(:broadcast)
       end
     end
