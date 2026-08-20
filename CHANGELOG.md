@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 
-- `GraphQL::Subscriptions::AnyCableSubscriptions#read_subscription` now raises `GraphQL::AnyCable::SubscriptionExpiredError` when the subscription is no longer stored in Redis, instead of returning a hash of `nil` values. [@Envek] ([#53](https://github.com/anycable/graphql-anycable/pull/53))
+- `GraphQL::Subscriptions::AnyCableSubscriptions#read_subscription` now raises `GraphQL::AnyCable::SubscriptionExpiredError` when the subscription is no longer stored in Redis, instead of returning `nil`. [@Envek] ([#53](https://github.com/anycable/graphql-anycable/pull/53))
 
 ## 1.3.3 - 2026-08-10
 
