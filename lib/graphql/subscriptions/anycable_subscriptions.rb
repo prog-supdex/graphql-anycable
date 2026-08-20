@@ -98,13 +98,15 @@ module GraphQL
         result = nil
 
         subscription_ids.each do |subscription_id|
-          next unless subscription_exists?(subscription_id)
-
           result = execute_update(subscription_id, event, object)
 
-          # A nil result can mean either a missing subscription or a skipped update.
-          # Retry only if the subscription disappeared.
-          break if result || subscription_exists?(subscription_id)
+          # Whatever GraphQL has decided here — including a nil result for NO_UPDATE or
+          # for #unsubscribe without a final update — applies to the whole group, as all
+          # of its subscriptions share the same fingerprint. So, ask only one of them.
+          break
+        rescue GraphQL::AnyCable::SubscriptionExpiredError
+          # This one is gone, but the rest of the group is still waiting for the update
+          next
         end
 
         return unless result
@@ -170,22 +172,27 @@ module GraphQL
       end
 
       # Return the query from "storage" (in redis)
+      # @raise [GraphQL::AnyCable::SubscriptionExpiredError] if it is not stored anymore
       def read_subscription(subscription_id)
-        with_redis do |redis|
+        subscription = with_redis do |redis|
           redis.mapped_hmget(
             "#{redis_key(SUBSCRIPTION_PREFIX)}#{subscription_id}",
             :query_string, :variables, :context, :operation_name
-          ).then do |subscription|
-            # Redis returns a hash with nil values for a missing key
-            next if subscription[:query_string].nil?
-
-            subscription[:context] = @serializer.load(subscription[:context])
-            subscription[:variables] = JSON.parse(subscription[:variables])
-            subscription[:operation_name] = nil if subscription[:operation_name].to_s.strip == ""
-
-            subscription
-          end
+          )
         end
+
+        # Give the connection back before raising or deserializing: a connector may be
+        # backed by a pool, and neither of these needs Redis anymore.
+        #
+        # Redis returns a hash with nil values for a missing key. A subscription without
+        # a query string is unusable anyway, so treat a half-written one as missing, too.
+        raise GraphQL::AnyCable::SubscriptionExpiredError, subscription_id if subscription[:query_string].nil?
+
+        subscription[:context] = @serializer.load(subscription[:context])
+        subscription[:variables] = JSON.parse(subscription[:variables])
+        subscription[:operation_name] = nil if subscription[:operation_name].to_s.strip == ""
+
+        subscription
       end
 
       # The channel was closed, forget about it and its subscriptions
@@ -261,10 +268,6 @@ module GraphQL
 
       def redis_key(prefix)
         "#{config.redis_prefix}-#{prefix}"
-      end
-
-      def subscription_exists?(subscription_id)
-        with_redis { |redis| redis.exists?(redis_key(SUBSCRIPTION_PREFIX) + subscription_id) }
       end
     end
   end
