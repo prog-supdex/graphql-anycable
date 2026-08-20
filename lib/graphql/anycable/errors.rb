@@ -17,15 +17,8 @@ module GraphQL
       end
     end
 
-    # This error is raised when a subscription is gone from Redis by the time it is read:
-    # it has expired, or it has been deleted by another process. Raising it (instead of
-    # returning nothing) lets the caller tell a vanished subscription from an update that
-    # GraphQL has deliberately skipped, and re-run the event on another subscription of
-    # the same fingerprint group.
-    class SubscriptionExpiredError < ::RuntimeError
-      def initialize(subscription_id = nil)
-        super("Subscription #{subscription_id.inspect} is no longer stored in Redis")
-      end
-    end
+    # This error is raised when a subscription is gone from Redis by the time it is read,
+    # so that the caller can tell it from an update GraphQL has deliberately skipped.
+    class SubscriptionExpiredError < ::RuntimeError; end
   end
 end
