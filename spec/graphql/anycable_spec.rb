@@ -244,6 +244,25 @@ RSpec.describe GraphQL::AnyCable do
     end
   end
 
+  describe ".read_subscription" do
+    let(:redis) { $redis }
+
+    before do
+      AnycableSchema.execute(
+        query: query,
+        context: {channel: channel, subscription_id: subscription_id},
+        variables: {},
+        operation_name: "SomeSubscription"
+      )
+      redis.del("graphql-subscription:#{subscription_id}")
+    end
+
+    it "raises when the subscription is no longer stored" do
+      expect { AnycableSchema.subscriptions.read_subscription(subscription_id) }
+        .to raise_error(GraphQL::AnyCable::SubscriptionExpiredError, subscription_id)
+    end
+  end
+
   describe "with missing channel instance in execution context" do
     subject do
       AnycableSchema.execute(

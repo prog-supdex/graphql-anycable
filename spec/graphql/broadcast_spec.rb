@@ -163,6 +163,19 @@ RSpec.describe "Broadcasting" do
 
         expect(AnyCable).not_to have_received(:broadcast)
       end
+
+      it "does not retry when the subscription expires after the update" do
+        allow(subscriptions).to receive(:execute_update).and_wrap_original do |original, subscription_id, *args|
+          result = original.call(subscription_id, *args)
+          redis.del("graphql-subscription:#{subscription_id}")
+          result
+        end
+
+        execute_grouped
+
+        expect(subscriptions).to have_received(:execute_update).once
+        expect(AnyCable).not_to have_received(:broadcast)
+      end
     end
 
     context "when a subscriber unsubscribes instead of updating" do

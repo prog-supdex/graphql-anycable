@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Subscription events are no longer dropped when another subscription with the same fingerprint expires during execution. [@prog-supdex] ([#53](https://github.com/anycable/graphql-anycable/pull/53))
 
-- Deleting a subscription no longer goes through the deprecated `GraphQL::AnyCable.redis`, which held on to a connection borrowed from the pool and printed a deprecation warning on every stale subscription. [@Envek] ([#53](https://github.com/anycable/graphql-anycable/pull/53))
+- Deleting a subscription no longer goes through the deprecated `GraphQL::AnyCable.redis`; this avoids both the deprecation warning and reusing a connection after it has been returned to the pool. [@Envek] ([#53](https://github.com/anycable/graphql-anycable/pull/53))
 
 ### Changed
 
